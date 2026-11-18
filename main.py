@@ -1,29 +1,58 @@
-"""Entrypoint script for news image repository container."""
-
+import logging
 import os
 import shutil
 import sys
+from pathlib import Path
 
-def run():
-    # Container execution verified
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("news-image-exporter")
+
+def main():
+    target_filename = "entry.png"
     candidates = [
-        os.path.join(base_dir, "entry.png"),
-        "/bot/entry.png",
-        "entry.png",
+        os.path.dirname(os.path.abspath(__file__)),
+        "/bot",
+        os.getcwd(),
     ]
+
+    logger.info("Scanning candidate directories for %s...", target_filename)
     src = None
-    for p in candidates:
-        if os.path.exists(p):
-            src = p
+    for cand in candidates:
+        candidate_path = os.path.join(cand, target_filename)
+        logger.debug("Checking path: %s", candidate_path)
+        if os.path.isfile(candidate_path):
+            src = candidate_path
+            logger.info("Located source file at %s", src)
             break
+
     if not src:
-        sys.exit(f"Source file not found among {candidates}")
-    dest_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
-    os.makedirs(dest_dir, exist_ok=True)
-    target = os.path.join(dest_dir, "entry.png")
-    shutil.copyfile(src, target)
-    print(f"Exported {src} to {target} ({os.path.getsize(target)} bytes)")
+        logger.error("Could not locate %s in candidate directories: %s", target_filename, candidates)
+        sys.exit(1)
+
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError as exc:
+        logger.error("Failed to create output directory %s: %s", out_dir, exc)
+        sys.exit(1)
+
+    dst = os.path.join(out_dir, target_filename)
+
+    try:
+        file_size = os.path.getsize(src)
+        if file_size == 0:
+            logger.warning("Source file %s is empty (0 bytes).", src)
+        shutil.copy2(src, dst)
+    except (IOError, shutil.Error) as err:
+        logger.error("Failed to copy file from %s to %s: %s", src, dst, err)
+        sys.exit(1)
+
+    logger.info("Successfully copied %s (%d bytes) to %s", src, file_size, dst)
+    print(f"Export successful: {src} -> {dst}")
 
 if __name__ == "__main__":
-    run()
+    main()
